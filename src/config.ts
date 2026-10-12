@@ -6,6 +6,9 @@ import {
 } from "./api/fitatuApiClientBase/FitatuApiDefaults.ts";
 import { FitatuMobileClientProfile } from "./api/fitatuApiClientBase/FitatuMobileClientProfile.ts";
 
+const optionalText = (schema: z.ZodString) =>
+	z.preprocess((value) => (typeof value === "string" && value.trim() === "" ? undefined : value), schema.optional());
+
 const configSchema = z.object({
 	MCP_TRANSPORT: z.enum(["http", "stdio"]).default("http"),
 	PORT: z.coerce.number().default(3000),
@@ -19,6 +22,11 @@ const configSchema = z.object({
 	FITATU_USER_AGENT: z.string().trim().min(1).default(DEFAULT_FITATU_USER_AGENT),
 	FITATU_APP_VERSION: z.string().trim().min(1).default(DEFAULT_FITATU_APP_VERSION),
 	FITATU_API_APK_UUID: z.string().trim().min(1).default(DEFAULT_FITATU_API_APK_UUID),
+	MCP_AUTH_PASSWORD: optionalText(z.string().min(16, "MCP_AUTH_PASSWORD must be at least 16 characters long")),
+	MCP_PUBLIC_URL: optionalText(z.string().url("MCP_PUBLIC_URL must be a valid URL")),
+	// Set automatically by Render; used as the public URL when MCP_PUBLIC_URL is not configured.
+	RENDER_EXTERNAL_URL: optionalText(z.string().url()),
+	MCP_AUTH_ALLOWED_REDIRECT_HOSTS: z.string().trim().min(1).default("claude.ai,claude.com"),
 });
 
 const loggerConfigSchema = configSchema.pick({

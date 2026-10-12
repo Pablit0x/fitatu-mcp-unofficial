@@ -1,0 +1,22 @@
+# Render Blueprint for a private, OAuth-protected deployment. See "Hosted deployment on Render" in README.md.
+services:
+  - type: web
+    name: fitatu-mcp
+    runtime: node
+    plan: free
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: node dist/index.js
+    envVars:
+      - key: NODE_VERSION
+        value: 22.18.0
+      - key: NODE_ENV
+        value: production
+      - key: MCP_TRANSPORT
+        value: http
+      - key: FITATU_EMAIL
+        sync: false
+      - key: FITATU_PASSWORD
+        sync: false
+      # Password you type on the authorization page when connecting a client. Read it from the Render dashboard.
+      - key: MCP_AUTH_PASSWORD
+        generateValue: true

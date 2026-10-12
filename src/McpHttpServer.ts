@@ -2,7 +2,18 @@ import express, { type Request, type Response } from "express";
 import { randomUUID } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js";
+import { getOAuthProtectedResourceMetadataUrl, mcpAuthRouter } from "@modelcontextprotocol/sdk/server/auth/router.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
+import { z } from "zod";
+import { AUTHORIZATION_CONFIRM_PATH, SingleUserOAuthProvider } from "./mcpAuth/SingleUserOAuthProvider.ts";
+
+const MCP_PATH = "/mcp";
+
+const authorizationConfirmationSchema = z.object({
+	request: z.string().min(1),
+	password: z.string().min(1),
+});
 
 interface McpHttpLogger {
 	info(bindings: Record<string, unknown>, message: string): void;
@@ -15,9 +26,17 @@ interface ActiveSession {
 	readonly transport: StreamableHTTPServerTransport;
 }
 
+export interface McpHttpOAuthOptions {
+	readonly provider: SingleUserOAuthProvider;
+	/** Public origin of this server as clients reach it, for example `https://example.onrender.com`. */
+	readonly publicUrl: URL;
+}
+
 export interface McpHttpServerOptions {
 	readonly createServer: () => McpServer;
 	readonly logger?: McpHttpLogger;
+	/** When set, every `/mcp` request must carry an access token issued by this provider. */
+	readonly oauth?: McpHttpOAuthOptions;
 }
 
 const silentLogger: McpHttpLogger = {
@@ -37,9 +56,12 @@ export class McpHttpServer {
 		this.createServer = options.createServer;
 		this.logger = options.logger ?? silentLogger;
 		this.app.use(express.json());
-		this.app.post("/mcp", (request, response) => this.handlePost(request, response));
-		this.app.get("/mcp", (request, response) => this.handleExistingSession(request, response));
-		this.app.delete("/mcp", (request, response) => this.handleExistingSession(request, response));
+		if (options.oauth) {
+			this.enableOAuth(options.oauth);
+		}
+		this.app.post(MCP_PATH, (request, response) => this.handlePost(request, response));
+		this.app.get(MCP_PATH, (request, response) => this.handleExistingSession(request, response));
+		this.app.delete(MCP_PATH, (request, response) => this.handleExistingSession(request, response));
 	}
 
 	public get activeSessionCount(): number {
@@ -51,6 +73,50 @@ export class McpHttpServer {
 		await Promise.allSettled(sessions.map(({ server }) => server.close()));
 		this.sessions.clear();
 		this.logger.info({ sessionCount: sessions.length }, "MCP sessions closed");
+	}
+
+	private enableOAuth(oauth: McpHttpOAuthOptions): void {
+		const resourceServerUrl = new URL(MCP_PATH, oauth.publicUrl);
+
+		// The server is expected to sit behind the hosting platform's reverse proxy.
+		this.app.set("trust proxy", 1);
+		this.app.use(
+			mcpAuthRouter({
+				provider: oauth.provider,
+				issuerUrl: oauth.publicUrl,
+				resourceServerUrl,
+				resourceName: "Fitatu MCP",
+				// Client secrets are derived from the client id and stay valid until the password changes.
+				clientRegistrationOptions: { clientSecretExpirySeconds: 0 },
+			}),
+		);
+		this.app.post(
+			AUTHORIZATION_CONFIRM_PATH,
+			express.urlencoded({ extended: false }),
+			async (request, response) => {
+				const confirmation = authorizationConfirmationSchema.safeParse(request.body);
+				if (!confirmation.success) {
+					response.status(400).type("text/plain").send("Invalid authorization form.");
+					return;
+				}
+				try {
+					await oauth.provider.confirmAuthorization(
+						confirmation.data.request,
+						confirmation.data.password,
+						response,
+					);
+				} catch (error) {
+					this.handleFailure(response, error);
+				}
+			},
+		);
+		this.app.use(
+			MCP_PATH,
+			requireBearerAuth({
+				verifier: oauth.provider,
+				resourceMetadataUrl: getOAuthProtectedResourceMetadataUrl(resourceServerUrl),
+			}),
+		);
 	}
 
 	private async handlePost(request: Request, response: Response): Promise<void> {

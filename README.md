@@ -137,6 +137,34 @@ In any MCP client that supports remote Streamable HTTP connections, use one of t
 - Personal: `https://YOUR_NGROK_DOMAIN/personal/mcp`
 - Test: `https://YOUR_NGROK_DOMAIN/test/mcp`
 
+#### OAuth protection
+
+Set `MCP_AUTH_PASSWORD` to require OAuth 2.1 on the HTTP transport. Without it, anyone who can reach `/mcp` can read and change the Fitatu account, so
+always set it when the server is reachable from the internet.
+
+With the password set, the server acts as its own authorization server for a single owner:
+
+- clients discover it through the standard OAuth metadata endpoints and register themselves dynamically;
+- connecting a client opens an authorization page where you type `MCP_AUTH_PASSWORD` once;
+- access tokens last one hour and are renewed with a refresh token that lasts 60 days;
+- clients may only redirect to the hosts in `MCP_AUTH_ALLOWED_REDIRECT_HOSTS` or to a loopback address;
+- five wrong passwords lock the authorization page for 15 minutes.
+
+Registrations and tokens are signed with a key derived from the password instead of being stored, so they survive restarts. Changing
+`MCP_AUTH_PASSWORD` signs every client out.
+
+#### Hosted deployment on Render
+
+[`render.yaml`](./render.yaml) describes a free Render web service with OAuth enabled:
+
+1. Push this repository to your own GitHub account and create a Render Blueprint from it.
+2. Enter `FITATU_EMAIL` and `FITATU_PASSWORD` when Render asks for them. Render generates `MCP_AUTH_PASSWORD`; read it from the service's environment
+   settings.
+3. After the deploy, add `https://YOUR_SERVICE.onrender.com/mcp` as a custom connector in Claude and type `MCP_AUTH_PASSWORD` on the authorization page.
+
+Render supplies the public URL through `RENDER_EXTERNAL_URL`; set `MCP_PUBLIC_URL` only when using a custom domain. A free service sleeps when idle, so
+the first request after a pause is slow and the client starts a new MCP session.
+
 ## Available tools
 
 | Tool | Purpose |
@@ -178,6 +206,9 @@ Runtime configuration is read from environment variables and validated at startu
 | `SERVER_NAME` | No | `fitatu-mcp` | Name reported by the MCP server. |
 | `SERVER_VERSION` | No | `3.0.0` | Version reported by the MCP server. |
 | `LOG_LEVEL` | No | `info` | `silent`, `error`, `warn`, `info`, or `debug`. |
+| `MCP_AUTH_PASSWORD` | When exposed to the internet | — | Sensitive. Enables OAuth on the HTTP transport; at least 16 characters. |
+| `MCP_PUBLIC_URL` | With `MCP_AUTH_PASSWORD`, unless on Render | `RENDER_EXTERNAL_URL` | Public origin of the server, used as the OAuth issuer. |
+| `MCP_AUTH_ALLOWED_REDIRECT_HOSTS` | No | `claude.ai,claude.com` | Comma-separated hosts OAuth clients may redirect to; loopback is always allowed. |
 | `FITATU_USER_AGENT` | No | `Dart/3.10 (dart:io)` | Fitatu mobile runtime user agent. |
 | `FITATU_APP_VERSION` | No | `4.14.4` | Fitatu mobile application version. |
 | `FITATU_API_APK_UUID` | No | `BE4B.251210.005` | Fitatu mobile build identifier. |

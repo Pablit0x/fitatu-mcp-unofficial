@@ -2,7 +2,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { logger } from "./logger.ts";
 import { getConfig } from "./config.ts";
-import { McpHttpServer } from "./McpHttpServer.ts";
+import { McpHttpServer, type McpHttpOAuthOptions } from "./McpHttpServer.ts";
+import { SingleUserOAuthProvider } from "./mcpAuth/SingleUserOAuthProvider.ts";
 import { AddMealItemsTool } from "./tools/addMealItems/AddMealItemsTool.ts";
 import { GetCurrentUserTool } from "./tools/currentUser/GetCurrentUserTool.ts";
 import { GetDayPlanItemsTool } from "./tools/dayPlanItems/GetDayPlanItemsTool.ts";
@@ -83,9 +84,33 @@ async function startStdio(): Promise<void> {
 	process.on("SIGINT", () => requestShutdown("SIGINT"));
 }
 
+function getOAuthOptions(): McpHttpOAuthOptions | undefined {
+	const config = getConfig();
+	if (!config.MCP_AUTH_PASSWORD) {
+		logger.warn({}, "MCP_AUTH_PASSWORD is not set: the HTTP endpoint accepts unauthenticated requests");
+		return undefined;
+	}
+
+	const publicUrl = config.MCP_PUBLIC_URL ?? config.RENDER_EXTERNAL_URL;
+	if (!publicUrl) {
+		throw new Error("MCP_PUBLIC_URL is required when MCP_AUTH_PASSWORD is set");
+	}
+
+	return {
+		publicUrl: new URL(new URL(publicUrl).origin),
+		provider: new SingleUserOAuthProvider({
+			ownerPassword: config.MCP_AUTH_PASSWORD,
+			allowedRedirectHosts: config.MCP_AUTH_ALLOWED_REDIRECT_HOSTS.split(",")
+				.map((host) => host.trim())
+				.filter((host) => host.length > 0),
+			logger,
+		}),
+	};
+}
+
 async function startHttp(): Promise<void> {
 	const config = getConfig();
-	const httpServer = new McpHttpServer({ createServer: getServer, logger });
+	const httpServer = new McpHttpServer({ createServer: getServer, logger, oauth: getOAuthOptions() });
 	const listener = httpServer.app.listen(config.PORT, config.HOST, () => {
 		logger.info(
 			{

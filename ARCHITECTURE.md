@@ -16,6 +16,7 @@ fitatu_mcp_ts/
 │   ├── config.ts                        # environment parsing and validation
 │   ├── logger.ts                        # process-wide logging configuration
 │   ├── development/                     # local multi-account launcher and streaming tunnel gateway
+│   ├── mcpAuth/                         # optional single-owner OAuth for the HTTP transport
 │   ├── tools/                           # MCP boundary
 │   │   ├── addMealItems/
 │   │   ├── bodyMeasurements/
@@ -94,7 +95,7 @@ canonical interface, but consumers use that full interface directly rather than 
 
 ### 2.1 Bootstrap, composition, and transport
 
-**Location:** `src/index.ts`, `src/McpHttpServer.ts`, `src/config.ts`, and `src/logger.ts`.
+**Location:** `src/index.ts`, `src/McpHttpServer.ts`, `src/mcpAuth`, `src/config.ts`, and `src/logger.ts`.
 
 This layer:
 
@@ -103,10 +104,15 @@ This layer:
 - registers MCP tools;
 - selects and starts the stdio or Streamable HTTP transport;
 - manages HTTP MCP sessions and graceful shutdown;
+- optionally protects the HTTP transport with OAuth for the server owner;
 - configures safe process-level logging.
 
 It must not contain Fitatu response mapping, domain policy, or feature workflows. `ApplicationServices` is the process-wide composition root: tools receive
 services from it rather than constructing or importing HTTP clients directly.
+
+`src/mcpAuth` authenticates MCP clients to this server and is unrelated to `src/api/auth`, which authenticates this server to Fitatu. It is a
+single-owner OAuth authorization server built on the MCP SDK's router: the owner approves a client with the configured server password, and client
+registrations, authorization codes, and tokens are signed values rather than stored records. It must not call Fitatu or depend on tools or services.
 
 `src/development` is development-only bootstrap infrastructure, outside the production build entry point. It starts separate server processes for personal
 and integration-test credentials, binds them to loopback, and streams explicitly routed MCP requests through a local gateway to one ngrok tunnel. It does
