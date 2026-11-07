@@ -9,6 +9,7 @@ import { z } from "zod";
 import { AUTHORIZATION_CONFIRM_PATH, SingleUserOAuthProvider } from "./mcpAuth/SingleUserOAuthProvider.ts";
 
 const MCP_PATH = "/mcp";
+const HEALTH_PATH = "/health";
 
 const authorizationConfirmationSchema = z.object({
 	request: z.string().min(1),
@@ -56,6 +57,10 @@ export class McpHttpServer {
 		this.createServer = options.createServer;
 		this.logger = options.logger ?? silentLogger;
 		this.app.use(express.json());
+		// Liveness probe for hosting platforms; it stays public and reveals no account or session data.
+		this.app.get(HEALTH_PATH, (_request, response) => {
+			response.status(200).json({ status: "ok" });
+		});
 		if (options.oauth) {
 			this.enableOAuth(options.oauth);
 		}

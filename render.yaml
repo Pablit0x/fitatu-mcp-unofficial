@@ -6,6 +6,7 @@ services:
     plan: free
     buildCommand: npm ci --include=dev && npm run build
     startCommand: node dist/index.js
+    healthCheckPath: /health
     envVars:
       - key: NODE_VERSION
         value: 22.18.0
