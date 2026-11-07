@@ -97,6 +97,9 @@ Clients with native Streamable HTTP support can connect directly to:
 http://localhost:3000/mcp
 ```
 
+The HTTP transport also serves an unauthenticated liveness probe at `GET /health`, which returns `{"status":"ok"}` and is suitable for load balancer
+or hosting platform health checks.
+
 For a client that launches remote MCP connections through a command, use `mcp-remote`:
 
 ```json
